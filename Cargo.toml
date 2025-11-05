@@ -1,0 +1,53 @@
+[package]
+name = "cloudflare-worker"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies.bytes]
+version = "1.10.1"
+default-features = false
+features = ["std"]
+
+[dependencies.futures]
+version = "0.3.31"
+default-features = false
+
+[dependencies.http]
+version = "1.3.1"
+default-features = false
+features = ["std"]
+
+[dependencies.http-body]
+version = "1.0.1"
+default-features = false
+
+[dependencies.http-body-util]
+version = "0.1.3"
+default-features = false
+
+[dependencies.serde]
+version = "1.0.228"
+default-features = false
+features = ["derive", "std"]
+
+[dependencies.serde_json]
+version = "1.0.145"
+default-features = false
+features = ["std"]
+
+[dependencies.serde_yaml]
+version = "0.9.34"
+default-features = false
+
+[dependencies.slice-of-bytes-reader]
+version = "0.1.0"
+default-features = false
+
+[dependencies.utf-8]
+version = "0.7.6"
+default-features = false
+
+[dependencies.worker]
+version = "0.6.7"
+default-features = false
+features = ["http"]
