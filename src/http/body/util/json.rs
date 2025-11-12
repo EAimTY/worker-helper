@@ -3,10 +3,10 @@ use http_body::{Body as BodyTrait, Frame};
 use http_body_util::Full;
 use serde::Serialize;
 use std::{
+    convert::Infallible,
     pin::Pin,
     task::{Context, Poll},
 };
-use worker::Error;
 
 /// A Json Value
 pub struct Json(Full<Bytes>);
@@ -23,7 +23,7 @@ impl Json {
 
 impl BodyTrait for Json {
     type Data = Bytes;
-    type Error = Error;
+    type Error = Infallible;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,

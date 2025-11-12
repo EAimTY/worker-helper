@@ -7,6 +7,7 @@ use serde_json::Error as JsonError;
 use serde_yaml::Error as YamlError;
 use slice_of_bytes_reader::Reader as BytesSliceReader;
 use std::{
+    convert::Infallible,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -28,6 +29,10 @@ where
     body: B,
     map_error_fn: fn(E1) -> E2,
 }
+
+pub struct MapInfallibleErrorBody<B, E>(MapErrorBody<B, Infallible, E>)
+where
+    B: Body<Error = Infallible>;
 
 #[derive(Debug, Error)]
 pub enum ReceiveBodyError<E> {
@@ -135,6 +140,15 @@ where
     }
 }
 
+impl<B, E> MapInfallibleErrorBody<B, E>
+where
+    B: Body<Error = Infallible>,
+{
+    pub fn new(body: B) -> Self {
+        Self(MapErrorBody::new(body, |_| unreachable!()))
+    }
+}
+
 impl<E> Body for HelperBody<E> {
     type Data = Bytes;
     type Error = E;
@@ -162,5 +176,21 @@ where
         Pin::new(&mut self.body)
             .poll_frame(cx)
             .map_err(|err| (self.map_error_fn)(err))
+    }
+}
+
+impl<B, D, E> Body for MapInfallibleErrorBody<B, E>
+where
+    B: Body<Data = D, Error = Infallible> + Unpin,
+    D: Buf,
+{
+    type Data = D;
+    type Error = E;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.0).poll_frame(cx)
     }
 }

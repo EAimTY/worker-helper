@@ -3,10 +3,10 @@ use http_body::{Body as BodyTrait, Frame};
 use http_body_util::Full;
 use serde::Serialize;
 use std::{
+    convert::Infallible,
     pin::Pin,
     task::{Context, Poll},
 };
-use worker::Error;
 
 /// A YAML Value
 pub struct Yaml(Full<Bytes>);
@@ -23,7 +23,7 @@ impl Yaml {
 
 impl BodyTrait for Yaml {
     type Data = Bytes;
-    type Error = Error;
+    type Error = Infallible;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,
