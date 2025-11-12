@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use futures::TryStreamExt as _;
+use http_body::{Body as BodyTrait, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
 use serde::Deserialize;
 use slice_of_bytes_reader::Reader as BytesSliceReader;
@@ -15,8 +16,6 @@ mod json;
 mod yaml;
 
 pub use self::{json::Json, yaml::Yaml};
-pub use http_body::{Body as BodyTrait, Frame};
-pub use http_body_util::Empty as EmptyBody;
 
 /// Universal request / response body
 pub struct Body(BoxBody<Bytes, Error>);
