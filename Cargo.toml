@@ -1,5 +1,5 @@
 [package]
-name = "cloudflare-worker"
+name = "worker-helper"
 version = "0.0.0"
 edition = "2024"
 
