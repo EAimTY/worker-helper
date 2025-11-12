@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use futures::TryStreamExt as _;
 use http_body::{Body as BodyTrait, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
@@ -20,6 +20,14 @@ pub use self::{json::Json, yaml::Yaml};
 
 /// Universal request / response body
 pub struct Body<E>(BoxBody<Bytes, E>);
+
+pub struct MapErrorBody<B, E1, E2>
+where
+    B: BodyTrait<Error = E1>,
+{
+    body: B,
+    map_error_fn: fn(E1) -> E2,
+}
 
 #[derive(Debug, Error)]
 pub enum ReceiveBodyError<E> {
@@ -118,6 +126,15 @@ impl<E> Body<E> {
     }
 }
 
+impl<B, E1, E2> MapErrorBody<B, E1, E2>
+where
+    B: BodyTrait<Error = E1>,
+{
+    pub fn new(body: B, map_error_fn: fn(E1) -> E2) -> Self {
+        Self { body, map_error_fn }
+    }
+}
+
 impl<E> BodyTrait for Body<E> {
     type Data = Bytes;
     type Error = E;
@@ -127,5 +144,23 @@ impl<E> BodyTrait for Body<E> {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         Pin::new(&mut self.0).poll_frame(cx)
+    }
+}
+
+impl<B, D, E1, E2> BodyTrait for MapErrorBody<B, E1, E2>
+where
+    B: BodyTrait<Data = D, Error = E1> + Unpin,
+    D: Buf,
+{
+    type Data = D;
+    type Error = E2;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
+        Pin::new(&mut self.body)
+            .poll_frame(cx)
+            .map_err(|err| (self.map_error_fn)(err))
     }
 }
