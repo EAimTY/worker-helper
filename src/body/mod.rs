@@ -3,14 +3,15 @@ use futures::TryStreamExt as _;
 use http_body::{Body as BodyTrait, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
 use serde::Deserialize;
+use serde_json::Error as JsonError;
+use serde_yaml::Error as YamlError;
 use slice_of_bytes_reader::Reader as BytesSliceReader;
 use std::{
-    io::Error as IoError,
     pin::Pin,
     task::{Context, Poll},
 };
+use thiserror::Error;
 use utf8::{DecodeError as Utf8DecodeError, Incomplete as IncompleteUtf8};
-use worker::Error;
 
 mod json;
 mod yaml;
@@ -18,22 +19,34 @@ mod yaml;
 pub use self::{json::Json, yaml::Yaml};
 
 /// Universal request / response body
-pub struct Body(BoxBody<Bytes, Error>);
+pub struct Body<E>(BoxBody<Bytes, E>);
 
-impl Body {
+#[derive(Debug, Error)]
+pub enum ReceiveBodyError<E> {
+    #[error(transparent)]
+    Receive(E),
+    #[error("bad UTF-8 encoding")]
+    BadUtf8Encoding,
+    #[error(transparent)]
+    InvalidJson(JsonError),
+    #[error(transparent)]
+    InvalidYaml(YamlError),
+}
+
+impl<E> Body<E> {
     pub fn new<T>(body: T) -> Self
     where
-        T: BodyTrait<Data = Bytes, Error = Error> + Send + Sync + 'static,
+        T: BodyTrait<Data = Bytes, Error = E> + Send + Sync + 'static,
     {
         Self(BoxBody::new(body))
     }
 
-    pub async fn text(self) -> Result<String, Error> {
+    pub async fn text(self) -> Result<String, ReceiveBodyError<E>> {
         let mut frames = self.0.into_data_stream();
         let mut text = String::new();
         let mut incomplete = None::<IncompleteUtf8>;
 
-        while let Some(frame) = frames.try_next().await? {
+        while let Some(frame) = frames.try_next().await.map_err(ReceiveBodyError::Receive)? {
             let mut frame = frame.as_ref();
 
             if let Some(current_incomplete) = incomplete.as_mut()
@@ -41,7 +54,7 @@ impl Body {
             {
                 match result {
                     Ok(chunk) => text.push_str(chunk),
-                    Err(_) => return Err(Error::BadEncoding),
+                    Err(_) => return Err(ReceiveBodyError::BadUtf8Encoding),
                 }
 
                 incomplete = None;
@@ -61,51 +74,53 @@ impl Body {
                     text.push_str(valid_prefix);
                     incomplete = Some(incomplete_suffix);
                 }
-                Err(Utf8DecodeError::Invalid { .. }) => return Err(Error::BadEncoding),
+                Err(Utf8DecodeError::Invalid { .. }) => {
+                    return Err(ReceiveBodyError::BadUtf8Encoding);
+                }
             }
         }
 
         if incomplete.is_some() {
-            return Err(Error::BadEncoding);
+            return Err(ReceiveBodyError::BadUtf8Encoding);
         }
 
         Ok(text)
     }
 
-    pub async fn json<T>(self) -> Result<T, Error>
+    pub async fn json<T>(self) -> Result<T, ReceiveBodyError<E>>
     where
         T: for<'a> Deserialize<'a>,
     {
         let mut frames = self.0.into_data_stream();
         let mut chunks = Vec::new();
 
-        while let Some(chunk) = frames.try_next().await? {
+        while let Some(chunk) = frames.try_next().await.map_err(ReceiveBodyError::Receive)? {
             chunks.push(chunk);
         }
 
         let reader = BytesSliceReader::new(chunks.into_iter());
-        serde_json::from_reader(reader).map_err(|err| Error::from(IoError::other(err)))
+        serde_json::from_reader(reader).map_err(ReceiveBodyError::InvalidJson)
     }
 
-    pub async fn yaml<T>(self) -> Result<T, Error>
+    pub async fn yaml<T>(self) -> Result<T, ReceiveBodyError<E>>
     where
         T: for<'a> Deserialize<'a>,
     {
         let mut frames = self.0.into_data_stream();
         let mut chunks = Vec::new();
 
-        while let Some(chunk) = frames.try_next().await? {
+        while let Some(chunk) = frames.try_next().await.map_err(ReceiveBodyError::Receive)? {
             chunks.push(chunk);
         }
 
         let reader = BytesSliceReader::new(chunks.into_iter());
-        serde_yaml::from_reader(reader).map_err(|err| Error::from(IoError::other(err)))
+        serde_yaml::from_reader(reader).map_err(ReceiveBodyError::InvalidYaml)
     }
 }
 
-impl BodyTrait for Body {
+impl<E> BodyTrait for Body<E> {
     type Data = Bytes;
-    type Error = Error;
+    type Error = E;
 
     fn poll_frame(
         mut self: Pin<&mut Self>,

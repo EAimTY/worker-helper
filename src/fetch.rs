@@ -10,7 +10,7 @@ impl<T> Fetch<T>
 where
     T: BodyTrait<Data = Bytes> + 'static,
 {
-    pub async fn send(self) -> Result<Response<Body>, Error> {
+    pub async fn send(self) -> Result<Response<Body<Error>>, Error> {
         let request = self.0.try_into()?;
         let response = RawFetch::Request(request).send().await?;
         let (parts, body) = Response::try_from(response)?.into_parts();
