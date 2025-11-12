@@ -1,6 +1,6 @@
 use bytes::{Buf, Bytes};
 use futures::TryStreamExt as _;
-use http_body::{Body as BodyTrait, Frame};
+use http_body::{Body, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
 use serde::Deserialize;
 use serde_json::Error as JsonError;
@@ -17,13 +17,13 @@ mod json;
 mod yaml;
 
 pub use self::{json::Json, yaml::Yaml};
+pub use http_body_util::*;
 
-/// Universal request / response body
-pub struct Body<E>(BoxBody<Bytes, E>);
+pub struct HelperBody<E>(BoxBody<Bytes, E>);
 
 pub struct MapErrorBody<B, E1, E2>
 where
-    B: BodyTrait<Error = E1>,
+    B: Body<Error = E1>,
 {
     body: B,
     map_error_fn: fn(E1) -> E2,
@@ -41,10 +41,10 @@ pub enum ReceiveBodyError<E> {
     InvalidYaml(YamlError),
 }
 
-impl<E> Body<E> {
+impl<E> HelperBody<E> {
     pub fn new<T>(body: T) -> Self
     where
-        T: BodyTrait<Data = Bytes, Error = E> + Send + Sync + 'static,
+        T: Body<Data = Bytes, Error = E> + Send + Sync + 'static,
     {
         Self(BoxBody::new(body))
     }
@@ -128,14 +128,14 @@ impl<E> Body<E> {
 
 impl<B, E1, E2> MapErrorBody<B, E1, E2>
 where
-    B: BodyTrait<Error = E1>,
+    B: Body<Error = E1>,
 {
     pub fn new(body: B, map_error_fn: fn(E1) -> E2) -> Self {
         Self { body, map_error_fn }
     }
 }
 
-impl<E> BodyTrait for Body<E> {
+impl<E> Body for HelperBody<E> {
     type Data = Bytes;
     type Error = E;
 
@@ -147,9 +147,9 @@ impl<E> BodyTrait for Body<E> {
     }
 }
 
-impl<B, D, E1, E2> BodyTrait for MapErrorBody<B, E1, E2>
+impl<B, D, E1, E2> Body for MapErrorBody<B, E1, E2>
 where
-    B: BodyTrait<Data = D, Error = E1> + Unpin,
+    B: Body<Data = D, Error = E1> + Unpin,
     D: Buf,
 {
     type Data = D;

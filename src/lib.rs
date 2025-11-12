@@ -1,7 +1,5 @@
-pub mod body;
-pub mod fetch;
+mod fetch;
+pub mod http;
 
-pub use crate::{body::*, fetch::*};
-pub use http;
-pub use http_body;
-pub use http_body_util;
+pub use crate::fetch::Fetch;
+pub use bytes;
