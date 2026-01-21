@@ -18,7 +18,6 @@ mod json;
 mod yaml;
 
 pub use self::{json::Json, yaml::Yaml};
-pub use http_body_util::*;
 
 pub struct HelperBody<E>(BoxBody<Bytes, E>);
 

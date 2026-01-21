@@ -1,5 +1,7 @@
+mod body;
 mod fetch;
-pub mod http;
 
-pub use crate::fetch::Fetch;
-pub use bytes;
+pub use crate::{
+    body::{HelperBody, Json, MapErrorBody, MapInfallibleErrorBody, ReceiveBodyError, Yaml},
+    fetch::Fetch,
+};

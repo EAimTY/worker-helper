@@ -1,4 +1,4 @@
-use crate::http::body::util::HelperBody;
+use crate::body::HelperBody;
 use bytes::Bytes;
 use http::{Request, Response};
 use http_body::Body;
