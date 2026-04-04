@@ -8,10 +8,17 @@ use std::{
     task::{Context, Poll},
 };
 
-/// A Json Value
+/// An in-memory JSON body built from a serializable value.
+///
+/// Available with the `json` feature.
 pub struct Json(Full<Bytes>);
 
 impl Json {
+    /// Serializes `json` into a full body.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `json` cannot be serialized as JSON.
     pub fn new<T>(json: T) -> Self
     where
         T: Serialize,

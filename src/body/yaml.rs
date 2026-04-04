@@ -8,10 +8,17 @@ use std::{
     task::{Context, Poll},
 };
 
-/// A YAML Value
+/// An in-memory YAML body built from a serializable value.
+///
+/// Available with the `yaml` feature.
 pub struct Yaml(Full<Bytes>);
 
 impl Yaml {
+    /// Serializes `yaml` into a full body.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `yaml` cannot be serialized as YAML.
     pub fn new<T>(yaml: T) -> Self
     where
         T: Serialize,

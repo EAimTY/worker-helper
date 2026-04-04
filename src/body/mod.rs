@@ -1,10 +1,14 @@
 use bytes::{Buf, Bytes};
 use futures::TryStreamExt as _;
-use http_body::{Body, Frame};
+use http_body::{Body as HttpBody, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
+#[cfg(any(feature = "json", feature = "yaml"))]
 use serde::Deserialize;
+#[cfg(feature = "json")]
 use serde_json::Error as JsonError;
+#[cfg(feature = "yaml")]
 use serde_yaml::Error as YamlError;
+#[cfg(any(feature = "json", feature = "yaml"))]
 use slice_of_bytes_reader::Reader as BytesSliceReader;
 use std::{
     convert::Infallible,
@@ -14,45 +18,66 @@ use std::{
 use thiserror::Error;
 use utf8::{DecodeError as Utf8DecodeError, Incomplete as IncompleteUtf8};
 
+#[cfg(feature = "json")]
 mod json;
+#[cfg(feature = "yaml")]
 mod yaml;
 
-pub use self::{json::Json, yaml::Yaml};
+#[cfg(feature = "json")]
+pub use self::json::Json;
+#[cfg(feature = "yaml")]
+pub use self::yaml::Yaml;
 
-pub struct HelperBody<E>(BoxBody<Bytes, E>);
+/// A boxed HTTP body with convenience methods for collecting text and, when
+/// enabled, JSON or YAML payloads.
+pub struct Body<E>(BoxBody<Bytes, E>);
 
+/// A body adapter that maps the underlying body's error type.
 pub struct MapErrorBody<B, E1, E2>
 where
-    B: Body<Error = E1>,
+    B: HttpBody<Error = E1>,
 {
     body: B,
     map_error_fn: fn(E1) -> E2,
 }
 
+/// A convenience adapter for bodies whose error type is [`Infallible`].
 pub struct MapInfallibleErrorBody<B, E>(MapErrorBody<B, Infallible, E>)
 where
-    B: Body<Error = Infallible>;
+    B: HttpBody<Error = Infallible>;
 
 #[derive(Debug, Error)]
+/// Errors returned while collecting or decoding a [`Body`].
 pub enum ReceiveBodyError<E> {
+    /// The underlying body returned an error while streaming frames.
     #[error(transparent)]
     Receive(E),
+    /// The collected body was not valid UTF-8.
     #[error("bad UTF-8 encoding")]
     BadUtf8Encoding,
+    #[cfg(feature = "json")]
+    /// The collected body could not be parsed as JSON.
     #[error(transparent)]
     InvalidJson(JsonError),
+    #[cfg(feature = "yaml")]
+    /// The collected body could not be parsed as YAML.
     #[error(transparent)]
     InvalidYaml(YamlError),
 }
 
-impl<E> HelperBody<E> {
+impl<E> Body<E> {
+    /// Boxes any compatible HTTP body so it can be handled uniformly.
     pub fn new<T>(body: T) -> Self
     where
-        T: Body<Data = Bytes, Error = E> + Send + Sync + 'static,
+        T: HttpBody<Data = Bytes, Error = E> + Send + Sync + 'static,
     {
         Self(BoxBody::new(body))
     }
 
+    /// Collects the streamed body into a UTF-8 string.
+    ///
+    /// This method correctly handles multi-byte UTF-8 sequences split across
+    /// frame boundaries.
     pub async fn text(self) -> Result<String, ReceiveBodyError<E>> {
         let mut frames = self.0.into_data_stream();
         let mut text = String::new();
@@ -99,6 +124,10 @@ impl<E> HelperBody<E> {
         Ok(text)
     }
 
+    #[cfg(feature = "json")]
+    /// Collects the body and deserializes it as JSON.
+    ///
+    /// Available with the `json` feature.
     pub async fn json<T>(self) -> Result<T, ReceiveBodyError<E>>
     where
         T: for<'a> Deserialize<'a>,
@@ -114,6 +143,10 @@ impl<E> HelperBody<E> {
         serde_json::from_reader(reader).map_err(ReceiveBodyError::InvalidJson)
     }
 
+    #[cfg(feature = "yaml")]
+    /// Collects the body and deserializes it as YAML.
+    ///
+    /// Available with the `yaml` feature.
     pub async fn yaml<T>(self) -> Result<T, ReceiveBodyError<E>>
     where
         T: for<'a> Deserialize<'a>,
@@ -132,8 +165,9 @@ impl<E> HelperBody<E> {
 
 impl<B, E1, E2> MapErrorBody<B, E1, E2>
 where
-    B: Body<Error = E1>,
+    B: HttpBody<Error = E1>,
 {
+    /// Wraps `body` and maps each body error through `map_error_fn`.
     pub fn new(body: B, map_error_fn: fn(E1) -> E2) -> Self {
         Self { body, map_error_fn }
     }
@@ -141,14 +175,15 @@ where
 
 impl<B, E> MapInfallibleErrorBody<B, E>
 where
-    B: Body<Error = Infallible>,
+    B: HttpBody<Error = Infallible>,
 {
+    /// Wraps an infallible body and exposes it as a body with any error type.
     pub fn new(body: B) -> Self {
         Self(MapErrorBody::new(body, |_| unreachable!()))
     }
 }
 
-impl<E> Body for HelperBody<E> {
+impl<E> HttpBody for Body<E> {
     type Data = Bytes;
     type Error = E;
 
@@ -160,9 +195,9 @@ impl<E> Body for HelperBody<E> {
     }
 }
 
-impl<B, D, E1, E2> Body for MapErrorBody<B, E1, E2>
+impl<B, D, E1, E2> HttpBody for MapErrorBody<B, E1, E2>
 where
-    B: Body<Data = D, Error = E1> + Unpin,
+    B: HttpBody<Data = D, Error = E1> + Unpin,
     D: Buf,
 {
     type Data = D;
@@ -178,9 +213,9 @@ where
     }
 }
 
-impl<B, D, E> Body for MapInfallibleErrorBody<B, E>
+impl<B, D, E> HttpBody for MapInfallibleErrorBody<B, E>
 where
-    B: Body<Data = D, Error = Infallible> + Unpin,
+    B: HttpBody<Data = D, Error = Infallible> + Unpin,
     D: Buf,
 {
     type Data = D;
