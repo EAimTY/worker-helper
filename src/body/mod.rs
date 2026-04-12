@@ -2,14 +2,10 @@ use bytes::{Buf, Bytes};
 use futures::TryStreamExt as _;
 use http_body::{Body as HttpBody, Frame};
 use http_body_util::{BodyExt as _, combinators::BoxBody};
-#[cfg(any(feature = "json", feature = "yaml"))]
-use serde::Deserialize;
 #[cfg(feature = "json")]
 use serde_json::Error as JsonError;
 #[cfg(feature = "yaml")]
 use serde_yaml::Error as YamlError;
-#[cfg(any(feature = "json", feature = "yaml"))]
-use slice_of_bytes_reader::Reader as BytesSliceReader;
 use std::{
     convert::Infallible,
     pin::Pin,
@@ -17,6 +13,8 @@ use std::{
 };
 use thiserror::Error;
 use utf8::{DecodeError as Utf8DecodeError, Incomplete as IncompleteUtf8};
+#[cfg(any(feature = "json", feature = "yaml"))]
+use {serde::Deserialize, slice_of_bytes_reader::Reader as BytesSliceReader};
 
 #[cfg(feature = "json")]
 mod json;
@@ -55,12 +53,12 @@ pub enum ReceiveBodyError<E> {
     /// The collected body was not valid UTF-8.
     #[error("bad UTF-8 encoding")]
     BadUtf8Encoding,
-    #[cfg(feature = "json")]
     /// The collected body could not be parsed as JSON.
+    #[cfg(feature = "json")]
     #[error(transparent)]
     InvalidJson(JsonError),
-    #[cfg(feature = "yaml")]
     /// The collected body could not be parsed as YAML.
+    #[cfg(feature = "yaml")]
     #[error(transparent)]
     InvalidYaml(YamlError),
 }
@@ -132,14 +130,14 @@ impl<E> Body<E> {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let mut frames = self.0.into_data_stream();
-        let mut chunks = Vec::new();
+        let frames = self
+            .0
+            .into_data_stream()
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(ReceiveBodyError::Receive)?;
 
-        while let Some(chunk) = frames.try_next().await.map_err(ReceiveBodyError::Receive)? {
-            chunks.push(chunk);
-        }
-
-        let reader = BytesSliceReader::new(chunks.into_iter());
+        let reader = BytesSliceReader::new(frames.into_iter());
         serde_json::from_reader(reader).map_err(ReceiveBodyError::InvalidJson)
     }
 
@@ -151,14 +149,14 @@ impl<E> Body<E> {
     where
         T: for<'a> Deserialize<'a>,
     {
-        let mut frames = self.0.into_data_stream();
-        let mut chunks = Vec::new();
+        let frames = self
+            .0
+            .into_data_stream()
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(ReceiveBodyError::Receive)?;
 
-        while let Some(chunk) = frames.try_next().await.map_err(ReceiveBodyError::Receive)? {
-            chunks.push(chunk);
-        }
-
-        let reader = BytesSliceReader::new(chunks.into_iter());
+        let reader = BytesSliceReader::new(frames.into_iter());
         serde_yaml::from_reader(reader).map_err(ReceiveBodyError::InvalidYaml)
     }
 }
