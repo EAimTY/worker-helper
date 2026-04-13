@@ -3,4 +3,4 @@
 pub mod body;
 pub mod fetch;
 
-pub use crate::{body::Body, fetch::Fetch};
+pub use crate::fetch::Fetch;

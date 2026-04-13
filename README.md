@@ -10,8 +10,8 @@ Helpers for building and decoding HTTP bodies when working with the
 The crate focuses on a small set of utilities:
 
 - `Fetch<T>` sends an `http::Request<T>` through `worker::Fetch`.
-- `Body<E>` wraps a response body and adds `text`, `json`, and `yaml`
-  decoding helpers.
+- `BodyExt` adds `text`, `json`, and `yaml` decoding helpers to HTTP bodies
+  whose data chunks are `bytes::Bytes`.
 - `Json` and `Yaml` turn `serde::Serialize` values into request or response
   bodies when the `json` and `yaml` features are enabled.
 - `MapErrorBody` and `MapInfallibleErrorBody` adapt body error types so bodies
@@ -19,16 +19,14 @@ The crate focuses on a small set of utilities:
 
 ## Features
 
-- `json` enables `Json`, `Body::json`, and
-  `ReceiveBodyError::InvalidJson`.
-- `yaml` enables `Yaml`, `Body::yaml`, and
-  `ReceiveBodyError::InvalidYaml`.
+- `json` enables `Json` and `BodyExt::json`.
+- `yaml` enables `Yaml` and `BodyExt::yaml`.
 
 Enable only the formats you need:
 
 ```toml
 [dependencies]
-worker-helper = { version = "0.1.0", features = ["json"] }
+worker-helper = { version = "0.3.0", features = ["json"] }
 ```
 
 ## Sending a request
@@ -37,7 +35,7 @@ worker-helper = { version = "0.1.0", features = ["json"] }
 use bytes::Bytes;
 use http::Request;
 use http_body_util::Empty;
-use worker_helper::Fetch;
+use worker_helper::{body::BodyExt, Fetch};
 
 async fn fetch_text() -> Result<String, Box<dyn std::error::Error>> {
     let request = Request::get("https://example.com")
@@ -57,10 +55,10 @@ async fn fetch_text() -> Result<String, Box<dyn std::error::Error>> {
 # {
 use bytes::Bytes;
 use http_body_util::Full;
-use worker_helper::Body;
+use worker_helper::body::{BodyExt, JsonBodyError};
 
-async fn parse_json() -> Result<Message, worker_helper::ReceiveBodyError<std::convert::Infallible>> {
-    let body = Body::new(Full::new(Bytes::from_static(br#"{"message":"ok"}"#)));
+async fn parse_json() -> Result<Message, JsonBodyError<std::convert::Infallible>> {
+    let body = Full::new(Bytes::from_static(br#"{"message":"ok"}"#));
     body.json().await
 }
 
@@ -77,7 +75,7 @@ struct Message {
 # #[cfg(feature = "json")]
 # {
 use http::Response;
-use worker_helper::{Json, MapInfallibleErrorBody};
+use worker_helper::body::{Json, MapInfallibleErrorBody};
 
 #[derive(serde::Serialize)]
 struct Payload {
@@ -95,10 +93,11 @@ fn response() -> Response<MapInfallibleErrorBody<Json, worker::Error>> {
 
 ## Error handling
 
-`Body<E>` preserves the underlying body error as
-`ReceiveBodyError::Receive(E)`. Parsing failures are reported as
-`ReceiveBodyError::BadUtf8Encoding` and, when enabled,
-`ReceiveBodyError::InvalidJson` or `ReceiveBodyError::InvalidYaml`.
+`BodyExt` preserves the underlying body error as `Body(E)` in each method's
+error type. Text decoding failures are reported as
+`TextBodyError::BadUtf8Encoding`; format decoding failures are reported as
+`JsonBodyError::Decode` or `YamlBodyError::Decode` when those features are
+enabled.
 
 ## License
 
